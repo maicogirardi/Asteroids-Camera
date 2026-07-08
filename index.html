@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Asteroids BB</title>
+	<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+	<main class="shell">
+		<section class="game-panel" aria-label="Asteroids BB">
+			<canvas id="gameCanvas" width="960" height="640"></canvas>
+
+			<div class="hud" aria-live="polite">
+				<div class="hud-block hud-left">
+					<div><span class="hud-label">Score</span> <strong id="scoreValue">0</strong></div>
+					<div><span class="hud-label accent">Vidas</span> <strong id="livesValue">3</strong></div>
+				</div>
+				<div class="hud-block hud-center">
+					<span class="hud-label">Hi-Score</span> <strong id="hiScoreValue">0</strong>
+				</div>
+				<div class="hud-block hud-right">
+					<div><span class="hud-label brand">by Imrse Labs</span></div>
+					<div><span class="hud-label accent">Nível</span> <strong id="waveValue">1</strong></div>
+				</div>
+			</div>
+
+			<div id="menuOverlay" class="overlay">
+				<div class="menu">
+					<p class="eyebrow">Banco do Brasil Arcade</p>
+					<h1>Asteroids BB</h1>
+					<p class="subtitle">Pilote no espaço, desvie dos asteroides e atire nos diamantes para subir no ranking.</p>
+					<p class="signature">by Imrse Labs</p>
+
+					<label class="name-field" for="playerName">
+						<span>Nome do jogador</span>
+						<input id="playerName" maxlength="16" autocomplete="off" value="Piloto BB">
+					</label>
+
+					<div class="actions">
+						<button id="startButton" type="button">Jogar</button>
+						<button id="cameraButton" type="button" class="secondary">Ativar câmera</button>
+						<button id="rankingButton" type="button" class="secondary">Ranking</button>
+					</div>
+
+					<div class="controls">
+						<span>Setas/WASD: mover</span>
+						<span>Espaço/Enter: atirar</span>
+						<span>Cabeça: mover | Piscada: atirar</span>
+						<span>P: pausar</span>
+					</div>
+				</div>
+			</div>
+
+			<div id="cameraDebug" class="camera-debug hidden" aria-label="Debug da câmera">
+				<video id="cameraVideo" autoplay muted playsinline></video>
+				<div class="camera-debug-info">
+					<strong id="cameraStatus">Câmera desligada</strong>
+					<span id="cameraVector">X 0.00 | Y 0.00</span>
+					<span id="cameraGesture">Gesto: nenhum</span>
+				</div>
+			</div>
+
+			<div id="rankingOverlay" class="overlay hidden">
+				<div class="menu compact">
+					<p class="eyebrow">Top 10</p>
+					<h2>Ranking</h2>
+					<ol id="rankingList" class="ranking-list"></ol>
+					<div class="actions">
+						<button id="backButton" type="button">Voltar</button>
+					</div>
+				</div>
+			</div>
+
+			<div id="gameOverOverlay" class="overlay hidden">
+				<div class="menu compact">
+					<p class="eyebrow">Fim de jogo</p>
+					<h2 id="gameOverTitle">Missão encerrada</h2>
+					<p id="finalScore" class="subtitle">Pontuação final: 0</p>
+					<p class="signature">by Imrse Labs</p>
+					<div class="actions">
+						<button id="restartButton" type="button">Jogar de novo</button>
+						<button id="gameOverRankingButton" type="button" class="secondary">Ranking</button>
+					</div>
+				</div>
+			</div>
+		</section>
+	</main>
+
+	<script src="game.js"></script>
+</body>
+</html>

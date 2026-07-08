@@ -1,0 +1,930 @@
+const canvas = document.getElementById("gameCanvas");
+const context = canvas.getContext("2d");
+
+const scoreValue = document.getElementById("scoreValue");
+const hiScoreValue = document.getElementById("hiScoreValue");
+const livesValue = document.getElementById("livesValue");
+const waveValue = document.getElementById("waveValue");
+const menuOverlay = document.getElementById("menuOverlay");
+const rankingOverlay = document.getElementById("rankingOverlay");
+const gameOverOverlay = document.getElementById("gameOverOverlay");
+const playerNameInput = document.getElementById("playerName");
+const startButton = document.getElementById("startButton");
+const cameraButton = document.getElementById("cameraButton");
+const rankingButton = document.getElementById("rankingButton");
+const backButton = document.getElementById("backButton");
+const restartButton = document.getElementById("restartButton");
+const gameOverRankingButton = document.getElementById("gameOverRankingButton");
+const rankingList = document.getElementById("rankingList");
+const finalScore = document.getElementById("finalScore");
+const gameOverTitle = document.getElementById("gameOverTitle");
+const cameraDebug = document.getElementById("cameraDebug");
+const cameraVideo = document.getElementById("cameraVideo");
+const cameraStatus = document.getElementById("cameraStatus");
+const cameraVector = document.getElementById("cameraVector");
+const cameraGesture = document.getElementById("cameraGesture");
+
+const storageKey = "asteroids-bb-ranking";
+const palette = {
+	space: "#06293a",
+	white: "#d8d6e2",
+	yellow: "#d6ca31",
+	purple: "#8a70c4",
+	cyan: "#54c7c4",
+	orange: "#ff9740",
+	pink: "#ff5a93",
+	green: "#22f05e"
+};
+const asteroidColors = [palette.purple, palette.cyan, palette.orange, palette.pink, palette.cyan];
+const world = {
+	width: 960,
+	height: 640
+};
+
+const game = {
+	state: "menu",
+	score: 0,
+	lives: 3,
+	wave: 1,
+	invulnerableTime: 0,
+	fireCooldown: 0,
+	lastTime: 0,
+	playerName: "Piloto BB"
+};
+
+const keys = new Set();
+const motionInput = {
+	enabled: false,
+	ready: false,
+	x: 0,
+	y: 0,
+	shooting: false,
+	neutralX: 0.5,
+	neutralY: 0.5,
+	calibrationSamples: [],
+	lastVideoTime: -1,
+	lastFaceRun: 0,
+	lastDebugRun: 0,
+	faceInterval: 42,
+	debugInterval: 120,
+	blinkCooldown: 0,
+	faceLandmarker: null
+};
+let ship = createShip();
+let bullets = [];
+let asteroids = [];
+let diamonds = [];
+let particles = [];
+let stars = [];
+
+function createShip() {
+	return {
+		x: world.width / 2,
+		y: world.height / 2,
+		radius: 16,
+		angle: -Math.PI / 2,
+		velocityX: 0,
+		velocityY: 0,
+		thrusting: false
+	};
+}
+
+function resizeCanvas() {
+	const rect = canvas.getBoundingClientRect();
+	const ratio = window.devicePixelRatio || 1;
+	canvas.width = Math.floor(rect.width * ratio);
+	canvas.height = Math.floor(rect.height * ratio);
+	context.setTransform(canvas.width / world.width, 0, 0, canvas.height / world.height, 0, 0);
+	context.imageSmoothingEnabled = false;
+	context.lineCap = "square";
+	context.lineJoin = "miter";
+}
+
+function resetGame() {
+	game.state = "playing";
+	game.score = 0;
+	game.lives = 3;
+	game.wave = 1;
+	game.invulnerableTime = 2.2;
+	game.fireCooldown = 0;
+	game.playerName = (playerNameInput.value || "Piloto BB").trim().slice(0, 16);
+	ship = createShip();
+	bullets = [];
+	diamonds = [];
+	particles = [];
+	spawnWave();
+	updateHud();
+	hideAllOverlays();
+}
+
+function spawnWave() {
+	asteroids = [];
+	const count = 4 + game.wave;
+
+	for (let index = 0; index < count; index++) {
+		asteroids.push(createAsteroid(randomEdgePosition(), 3));
+	}
+
+	for (let index = 0; index < Math.min(2 + game.wave, 7); index++) {
+		diamonds.push(createDiamond(randomEdgePosition()));
+	}
+}
+
+function createAsteroid(position, size) {
+	const speed = 28 + Math.random() * 34 + game.wave * 4;
+	const angle = Math.random() * Math.PI * 2;
+	const radius = size === 3 ? 44 : size === 2 ? 28 : 16;
+	const vertices = [];
+	const vertexCount = 7 + Math.floor(Math.random() * 3);
+
+	for (let index = 0; index < vertexCount; index++) {
+		vertices.push(0.72 + Math.random() * 0.42);
+	}
+
+	return {
+		x: position.x,
+		y: position.y,
+		size,
+		radius,
+		angle: Math.random() * Math.PI * 2,
+		spin: (Math.random() - 0.5) * 1.2,
+		velocityX: Math.cos(angle) * speed,
+		velocityY: Math.sin(angle) * speed,
+		color: asteroidColors[Math.floor(Math.random() * asteroidColors.length)],
+		vertices
+	};
+}
+
+function createDiamond(position) {
+	const speed = 36 + Math.random() * 42 + game.wave * 5;
+	const angle = Math.random() * Math.PI * 2;
+
+	return {
+		x: position.x,
+		y: position.y,
+		radius: 18,
+		angle: Math.random() * Math.PI * 2,
+		spin: (Math.random() > 0.5 ? 1 : -1) * (1.8 + Math.random()),
+		velocityX: Math.cos(angle) * speed,
+		velocityY: Math.sin(angle) * speed
+	};
+}
+
+function randomEdgePosition() {
+	const side = Math.floor(Math.random() * 4);
+	const margin = 80;
+
+	if (side === 0) {
+		return { x: Math.random() * world.width, y: -margin };
+	}
+
+	if (side === 1) {
+		return { x: world.width + margin, y: Math.random() * world.height };
+	}
+
+	if (side === 2) {
+		return { x: Math.random() * world.width, y: world.height + margin };
+	}
+
+	return { x: -margin, y: Math.random() * world.height };
+}
+
+function update(deltaTime) {
+	if (game.state !== "playing") {
+		return;
+	}
+
+	handleInput(deltaTime);
+	updateShip(deltaTime);
+	updateBullets(deltaTime);
+	updateAsteroids(deltaTime);
+	updateDiamonds(deltaTime);
+	updateParticles(deltaTime);
+	checkCollisions();
+
+	game.fireCooldown = Math.max(0, game.fireCooldown - deltaTime);
+	game.invulnerableTime = Math.max(0, game.invulnerableTime - deltaTime);
+
+	if (asteroids.length === 0 && diamonds.length === 0) {
+		game.wave++;
+		game.score += 500;
+		game.invulnerableTime = 1.4;
+		spawnWave();
+		updateHud();
+	}
+}
+
+function handleInput(deltaTime) {
+	const turningLeft = keys.has("ArrowLeft") || keys.has("KeyA");
+	const turningRight = keys.has("ArrowRight") || keys.has("KeyD");
+	const thrusting = keys.has("ArrowUp") || keys.has("KeyW");
+	const braking = keys.has("ArrowDown") || keys.has("KeyS");
+	const hasMotion = motionInput.enabled && motionInput.ready;
+
+	if (turningLeft) {
+		ship.angle -= 4.8 * deltaTime;
+	}
+
+	if (turningRight) {
+		ship.angle += 4.8 * deltaTime;
+	}
+
+	ship.thrusting = thrusting;
+
+	if (thrusting) {
+		ship.velocityX += Math.cos(ship.angle) * 250 * deltaTime;
+		ship.velocityY += Math.sin(ship.angle) * 250 * deltaTime;
+	}
+
+	if (braking) {
+		ship.velocityX *= 1 - 2.4 * deltaTime;
+		ship.velocityY *= 1 - 2.4 * deltaTime;
+	}
+
+	if (hasMotion) {
+		ship.velocityX += motionInput.x * 360 * deltaTime;
+		ship.velocityY += motionInput.y * 360 * deltaTime;
+
+		if (Math.abs(motionInput.x) > 0.08 || Math.abs(motionInput.y) > 0.08) {
+			ship.angle = Math.atan2(motionInput.y, motionInput.x);
+			ship.thrusting = true;
+		}
+	}
+
+	if ((keys.has("Space") || keys.has("Enter") || motionInput.shooting) && game.fireCooldown <= 0) {
+		fireBullet();
+	}
+}
+
+function updateShip(deltaTime) {
+	ship.velocityX *= 0.992;
+	ship.velocityY *= 0.992;
+	ship.x += ship.velocityX * deltaTime;
+	ship.y += ship.velocityY * deltaTime;
+	wrapObject(ship);
+}
+
+function fireBullet() {
+	const noseX = ship.x + Math.cos(ship.angle) * 20;
+	const noseY = ship.y + Math.sin(ship.angle) * 20;
+	bullets.push({
+		x: noseX,
+		y: noseY,
+		radius: 4,
+		life: 1.2,
+		velocityX: Math.cos(ship.angle) * 520 + ship.velocityX,
+		velocityY: Math.sin(ship.angle) * 520 + ship.velocityY
+	});
+	game.fireCooldown = 0.16;
+}
+
+function updateBullets(deltaTime) {
+	bullets = bullets.filter((bullet) => {
+		bullet.x += bullet.velocityX * deltaTime;
+		bullet.y += bullet.velocityY * deltaTime;
+		bullet.life -= deltaTime;
+		return bullet.life > 0 && isInsideWorld(bullet);
+	});
+}
+
+function updateAsteroids(deltaTime) {
+	for (const asteroid of asteroids) {
+		asteroid.x += asteroid.velocityX * deltaTime;
+		asteroid.y += asteroid.velocityY * deltaTime;
+		asteroid.angle += asteroid.spin * deltaTime;
+		wrapObject(asteroid);
+	}
+}
+
+function updateDiamonds(deltaTime) {
+	for (const diamond of diamonds) {
+		diamond.x += diamond.velocityX * deltaTime;
+		diamond.y += diamond.velocityY * deltaTime;
+		diamond.angle += diamond.spin * deltaTime;
+		wrapObject(diamond);
+	}
+}
+
+function updateParticles(deltaTime) {
+	particles = particles.filter((particle) => {
+		particle.x += particle.velocityX * deltaTime;
+		particle.y += particle.velocityY * deltaTime;
+		particle.life -= deltaTime;
+		return particle.life > 0;
+	});
+}
+
+function checkCollisions() {
+	for (let bulletIndex = bullets.length - 1; bulletIndex >= 0; bulletIndex--) {
+		const bullet = bullets[bulletIndex];
+		let consumed = false;
+
+		for (let asteroidIndex = asteroids.length - 1; asteroidIndex >= 0; asteroidIndex--) {
+			const asteroid = asteroids[asteroidIndex];
+
+			if (!circlesOverlap(bullet, asteroid)) {
+				continue;
+			}
+
+			bullets.splice(bulletIndex, 1);
+			breakAsteroid(asteroidIndex);
+			addScore(100);
+			consumed = true;
+			break;
+		}
+
+		if (consumed) {
+			continue;
+		}
+
+		for (let diamondIndex = diamonds.length - 1; diamondIndex >= 0; diamondIndex--) {
+			const diamond = diamonds[diamondIndex];
+
+			if (!circlesOverlap(bullet, diamond)) {
+				continue;
+			}
+
+			bullets.splice(bulletIndex, 1);
+			diamonds.splice(diamondIndex, 1);
+			spawnBurst(diamond.x, diamond.y, palette.pink, 18);
+			addScore(250);
+			break;
+		}
+	}
+
+	if (game.invulnerableTime > 0) {
+		return;
+	}
+
+	for (const asteroid of asteroids) {
+		if (circlesOverlap(ship, asteroid)) {
+			damageShip();
+			return;
+		}
+	}
+
+	for (const diamond of diamonds) {
+		if (circlesOverlap(ship, diamond)) {
+			damageShip();
+			return;
+		}
+	}
+}
+
+function breakAsteroid(index) {
+	const asteroid = asteroids[index];
+	asteroids.splice(index, 1);
+	spawnBurst(asteroid.x, asteroid.y, asteroid.color, 16);
+
+	if (asteroid.size <= 1) {
+		return;
+	}
+
+	for (let index = 0; index < 2; index++) {
+		asteroids.push(createAsteroid({ x: asteroid.x, y: asteroid.y }, asteroid.size - 1));
+	}
+}
+
+function damageShip() {
+	game.lives--;
+	spawnBurst(ship.x, ship.y, palette.orange, 26);
+	updateHud();
+
+	if (game.lives <= 0) {
+		endGame();
+		return;
+	}
+
+	ship = createShip();
+	game.invulnerableTime = 2.4;
+}
+
+function endGame() {
+	game.state = "gameover";
+	saveScore();
+	finalScore.textContent = `Pontuação final: ${game.score}`;
+	gameOverTitle.textContent = game.score > 0 ? "Missão encerrada" : "Tente novamente";
+	hideAllOverlays();
+	gameOverOverlay.classList.remove("hidden");
+}
+
+function addScore(value) {
+	game.score += value;
+	updateHud();
+}
+
+function updateHud() {
+	scoreValue.textContent = game.score.toString();
+	hiScoreValue.textContent = getHighScore().toString();
+	livesValue.textContent = game.lives.toString();
+	waveValue.textContent = game.wave.toString();
+}
+
+function draw() {
+	clearCanvas();
+	drawStarfield();
+	drawDiamonds();
+	drawAsteroids();
+	drawBullets();
+	drawShip();
+	drawParticles();
+
+	if (game.state === "paused") {
+		drawPause();
+	}
+}
+
+function clearCanvas() {
+	context.fillStyle = palette.space;
+	context.fillRect(0, 0, world.width, world.height);
+}
+
+function drawStarfield() {
+	context.save();
+
+	for (const star of stars) {
+		context.globalAlpha = star.alpha;
+		context.fillStyle = star.color;
+		context.fillRect(star.x, star.y, star.size, star.size);
+	}
+
+	context.restore();
+}
+
+function drawShip() {
+	if (game.state === "menu") {
+		return;
+	}
+
+	if (game.invulnerableTime > 0 && Math.floor(game.invulnerableTime * 10) % 2 === 0) {
+		return;
+	}
+
+	context.save();
+	context.translate(Math.round(ship.x), Math.round(ship.y));
+	context.rotate(ship.angle);
+	context.strokeStyle = palette.green;
+	context.fillStyle = palette.green;
+	context.lineWidth = 4;
+	context.beginPath();
+	context.moveTo(24, 0);
+	context.lineTo(-16, -16);
+	context.lineTo(-9, 0);
+	context.lineTo(-16, 16);
+	context.closePath();
+	context.fill();
+	context.stroke();
+
+	if (ship.thrusting) {
+		context.strokeStyle = palette.orange;
+		context.lineWidth = 4;
+		context.beginPath();
+		context.moveTo(-18, -8);
+		context.lineTo(-34, 0);
+		context.lineTo(-18, 8);
+		context.stroke();
+	}
+
+	context.restore();
+}
+
+function drawBullets() {
+	context.fillStyle = palette.yellow;
+
+	for (const bullet of bullets) {
+		context.fillRect(Math.round(bullet.x - 3), Math.round(bullet.y - 3), 6, 6);
+	}
+}
+
+function drawAsteroids() {
+	context.save();
+	context.lineWidth = 4;
+
+	for (const asteroid of asteroids) {
+		context.save();
+		context.translate(Math.round(asteroid.x), Math.round(asteroid.y));
+		context.rotate(asteroid.angle);
+		context.strokeStyle = asteroid.color;
+		context.beginPath();
+
+		for (let index = 0; index < asteroid.vertices.length; index++) {
+			const angle = (index / asteroid.vertices.length) * Math.PI * 2;
+			const radius = asteroid.radius * asteroid.vertices[index];
+			const x = Math.round(Math.cos(angle) * radius / 4) * 4;
+			const y = Math.round(Math.sin(angle) * radius / 4) * 4;
+
+			if (index === 0) {
+				context.moveTo(x, y);
+			} else {
+				context.lineTo(x, y);
+			}
+		}
+
+		context.closePath();
+		context.stroke();
+		context.restore();
+	}
+
+	context.restore();
+}
+
+function drawDiamonds() {
+	for (const diamond of diamonds) {
+		context.save();
+		context.translate(Math.round(diamond.x), Math.round(diamond.y));
+		context.rotate(diamond.angle);
+		context.strokeStyle = palette.pink;
+		context.fillStyle = palette.pink;
+		context.lineWidth = 4;
+		context.beginPath();
+		context.moveTo(0, -24);
+		context.lineTo(20, 0);
+		context.lineTo(0, 24);
+		context.lineTo(-20, 0);
+		context.closePath();
+		context.fill();
+		context.stroke();
+		context.beginPath();
+		context.moveTo(-18, 0);
+		context.lineTo(0, -22);
+		context.lineTo(18, 0);
+		context.moveTo(-18, 0);
+		context.lineTo(0, 22);
+		context.lineTo(18, 0);
+		context.stroke();
+		context.restore();
+	}
+}
+
+function drawParticles() {
+	context.save();
+
+	for (const particle of particles) {
+		context.globalAlpha = Math.max(0, particle.life);
+		context.fillStyle = particle.color;
+		context.fillRect(Math.round(particle.x), Math.round(particle.y), 4, 4);
+	}
+
+	context.restore();
+}
+
+function drawPause() {
+	context.save();
+	context.fillStyle = "rgba(4, 26, 40, 0.82)";
+	context.fillRect(0, 0, world.width, world.height);
+	context.fillStyle = palette.yellow;
+	context.font = "900 48px 'Courier New', monospace";
+	context.textAlign = "center";
+	context.fillText("PAUSADO", world.width / 2, world.height / 2);
+	context.restore();
+}
+
+function spawnBurst(x, y, color, count) {
+	for (let index = 0; index < count; index++) {
+		const angle = Math.random() * Math.PI * 2;
+		const speed = 60 + Math.random() * 170;
+		particles.push({
+			x,
+			y,
+			color,
+			life: 0.35 + Math.random() * 0.6,
+			velocityX: Math.cos(angle) * speed,
+			velocityY: Math.sin(angle) * speed
+		});
+	}
+}
+
+function circlesOverlap(first, second) {
+	const deltaX = first.x - second.x;
+	const deltaY = first.y - second.y;
+	const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+	return distance < first.radius + second.radius;
+}
+
+function wrapObject(object) {
+	if (object.x < -object.radius) {
+		object.x = world.width + object.radius;
+	} else if (object.x > world.width + object.radius) {
+		object.x = -object.radius;
+	}
+
+	if (object.y < -object.radius) {
+		object.y = world.height + object.radius;
+	} else if (object.y > world.height + object.radius) {
+		object.y = -object.radius;
+	}
+}
+
+function isInsideWorld(object) {
+	return object.x >= -object.radius &&
+		object.x <= world.width + object.radius &&
+		object.y >= -object.radius &&
+		object.y <= world.height + object.radius;
+}
+
+function saveScore() {
+	const ranking = readRanking();
+	ranking.push({
+		name: game.playerName || "Piloto BB",
+		score: game.score,
+		date: new Date().toLocaleDateString("pt-BR")
+	});
+	ranking.sort((a, b) => b.score - a.score);
+	localStorage.setItem(storageKey, JSON.stringify(ranking.slice(0, 10)));
+}
+
+function readRanking() {
+	try {
+		return JSON.parse(localStorage.getItem(storageKey)) || [];
+	} catch {
+		return [];
+	}
+}
+
+function getHighScore() {
+	const ranking = readRanking();
+
+	if (ranking.length === 0) {
+		return game.score;
+	}
+
+	return Math.max(game.score, ranking[0].score || 0);
+}
+
+function renderRanking() {
+	const ranking = readRanking();
+	rankingList.innerHTML = "";
+
+	if (ranking.length === 0) {
+		const empty = document.createElement("li");
+		empty.className = "empty";
+		empty.textContent = "Nenhuma pontuação registrada ainda.";
+		rankingList.appendChild(empty);
+		return;
+	}
+
+	for (const entry of ranking) {
+		const item = document.createElement("li");
+		item.textContent = `${entry.name} - ${entry.score} pts - ${entry.date}`;
+		rankingList.appendChild(item);
+	}
+}
+
+function showRanking() {
+	renderRanking();
+	hideAllOverlays();
+	rankingOverlay.classList.remove("hidden");
+	game.state = game.state === "playing" ? "paused" : game.state;
+}
+
+function showMenu() {
+	game.state = "menu";
+	hideAllOverlays();
+	menuOverlay.classList.remove("hidden");
+}
+
+function hideAllOverlays() {
+	menuOverlay.classList.add("hidden");
+	rankingOverlay.classList.add("hidden");
+	gameOverOverlay.classList.add("hidden");
+}
+
+function createStars() {
+	stars = [];
+
+	for (let index = 0; index < 86; index++) {
+		stars.push({
+			x: Math.round(Math.random() * world.width / 4) * 4,
+			y: Math.round(Math.random() * world.height / 4) * 4,
+			size: Math.random() > 0.84 ? 4 : 2,
+			alpha: 0.2 + Math.random() * 0.52,
+			color: Math.random() > 0.78 ? palette.cyan : palette.white
+		});
+	}
+}
+
+function loop(timestamp) {
+	const deltaTime = Math.min(0.033, (timestamp - game.lastTime) / 1000 || 0);
+	game.lastTime = timestamp;
+	update(deltaTime);
+	draw();
+	requestAnimationFrame(loop);
+}
+
+async function enableCameraControls() {
+	if (motionInput.enabled) {
+		return;
+	}
+
+	const mediaPipeVersion = "0.10.21";
+	cameraButton.disabled = true;
+	cameraButton.textContent = "Carregando...";
+	cameraDebug.classList.remove("hidden");
+	cameraStatus.textContent = "Solicitando câmera...";
+
+	try {
+		const stream = await navigator.mediaDevices.getUserMedia({
+			video: {
+				width: { ideal: 320 },
+				height: { ideal: 240 },
+				facingMode: "user"
+			},
+			audio: false
+		});
+
+		cameraVideo.srcObject = stream;
+		await cameraVideo.play();
+		cameraStatus.textContent = "Carregando modelos...";
+
+		const vision = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${mediaPipeVersion}/vision_bundle.mjs`);
+		const filesetResolver = await vision.FilesetResolver.forVisionTasks(
+			`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${mediaPipeVersion}/wasm`
+		);
+
+		motionInput.faceLandmarker = await vision.FaceLandmarker.createFromOptions(filesetResolver, {
+			baseOptions: {
+				modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+			},
+			runningMode: "VIDEO",
+			numFaces: 1
+		});
+
+		motionInput.enabled = true;
+		cameraButton.textContent = "Câmera ativa";
+		cameraStatus.textContent = "Calibrando rosto...";
+		requestAnimationFrame(updateCameraInput);
+	} catch (error) {
+		console.error(error);
+		motionInput.enabled = false;
+		cameraButton.disabled = false;
+		cameraButton.textContent = "Ativar câmera";
+		cameraStatus.textContent = getCameraErrorMessage(error);
+	}
+}
+
+function getCameraErrorMessage(error) {
+	if (error.name === "NotAllowedError") {
+		return "Permissão da câmera negada";
+	}
+
+	if (error.name === "NotFoundError") {
+		return "Nenhuma câmera encontrada";
+	}
+
+	if (error.name === "NotReadableError") {
+		return "Câmera em uso por outro app";
+	}
+
+	return `Erro: ${error.name || "câmera"}`;
+}
+
+function updateCameraInput() {
+	if (!motionInput.enabled || cameraVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+		requestAnimationFrame(updateCameraInput);
+		return;
+	}
+
+	const timestamp = performance.now();
+
+	if (cameraVideo.currentTime !== motionInput.lastVideoTime) {
+		motionInput.lastVideoTime = cameraVideo.currentTime;
+
+		if (timestamp - motionInput.lastFaceRun >= motionInput.faceInterval) {
+			motionInput.lastFaceRun = timestamp;
+			updateFaceInput(timestamp);
+		}
+
+		if (timestamp - motionInput.lastDebugRun >= motionInput.debugInterval) {
+			motionInput.lastDebugRun = timestamp;
+			updateCameraDebug();
+		}
+	}
+
+	requestAnimationFrame(updateCameraInput);
+}
+
+function updateFaceInput(timestamp) {
+	const results = motionInput.faceLandmarker.detectForVideo(cameraVideo, timestamp);
+	const landmarks = results.faceLandmarks?.[0];
+
+	if (!landmarks) {
+		motionInput.ready = false;
+		motionInput.x = 0;
+		motionInput.y = 0;
+		cameraStatus.textContent = "Rosto não detectado";
+		return;
+	}
+
+	const nose = landmarks[1];
+
+	if (motionInput.calibrationSamples.length < 30) {
+		motionInput.calibrationSamples.push({ x: nose.x, y: nose.y });
+		const progress = Math.round(motionInput.calibrationSamples.length / 30 * 100);
+		cameraStatus.textContent = `Calibrando rosto ${progress}%`;
+		return;
+	}
+
+	if (!motionInput.ready) {
+		const total = motionInput.calibrationSamples.reduce((sum, sample) => {
+			sum.x += sample.x;
+			sum.y += sample.y;
+			return sum;
+		}, { x: 0, y: 0 });
+
+		motionInput.neutralX = total.x / motionInput.calibrationSamples.length;
+		motionInput.neutralY = total.y / motionInput.calibrationSamples.length;
+		motionInput.ready = true;
+		cameraStatus.textContent = "Controle por câmera ativo";
+	}
+
+	const deadzone = 0.035;
+	const sensitivity = 8;
+	const rawX = (nose.x - motionInput.neutralX) * sensitivity;
+	const rawY = (nose.y - motionInput.neutralY) * sensitivity;
+
+	motionInput.x = applyDeadzone(rawX, deadzone);
+	motionInput.y = applyDeadzone(rawY, deadzone);
+	updateBlinkInput(landmarks, timestamp);
+}
+
+function applyDeadzone(value, deadzone) {
+	if (Math.abs(value) < deadzone) {
+		return 0;
+	}
+
+	return Math.max(-1, Math.min(1, value));
+}
+
+function updateBlinkInput(landmarks, timestamp) {
+	const leftEye = getEyeOpenRatio(landmarks, 33, 133, 159, 145);
+	const rightEye = getEyeOpenRatio(landmarks, 362, 263, 386, 374);
+	const blinkDetected = leftEye < 0.18 && rightEye < 0.18;
+
+	if (timestamp < motionInput.blinkCooldown) {
+		motionInput.shooting = false;
+		return;
+	}
+
+	motionInput.shooting = blinkDetected;
+
+	if (blinkDetected) {
+		motionInput.blinkCooldown = timestamp + 360;
+	}
+}
+
+function getEyeOpenRatio(landmarks, outerIndex, innerIndex, upperIndex, lowerIndex) {
+	const outer = landmarks[outerIndex];
+	const inner = landmarks[innerIndex];
+	const upper = landmarks[upperIndex];
+	const lower = landmarks[lowerIndex];
+	const width = Math.hypot(inner.x - outer.x, inner.y - outer.y);
+	const height = Math.hypot(lower.x - upper.x, lower.y - upper.y);
+
+	return width > 0 ? height / width : 1;
+}
+
+function updateCameraDebug() {
+	cameraVector.textContent = `X ${motionInput.x.toFixed(2)} | Y ${motionInput.y.toFixed(2)}`;
+	cameraGesture.textContent = motionInput.shooting ? "Gesto: piscada" : "Gesto: nenhum";
+}
+
+window.addEventListener("resize", resizeCanvas);
+
+window.addEventListener("keydown", (event) => {
+	if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) {
+		event.preventDefault();
+	}
+
+	if (event.code === "KeyP" && (game.state === "playing" || game.state === "paused")) {
+		game.state = game.state === "playing" ? "paused" : "playing";
+		hideAllOverlays();
+		return;
+	}
+
+	keys.add(event.code);
+});
+
+window.addEventListener("keyup", (event) => {
+	keys.delete(event.code);
+});
+
+playerNameInput.addEventListener("focus", () => {
+	playerNameInput.select();
+});
+
+playerNameInput.addEventListener("pointerup", (event) => {
+	event.preventDefault();
+	playerNameInput.select();
+});
+
+startButton.addEventListener("click", resetGame);
+cameraButton.addEventListener("click", enableCameraControls);
+restartButton.addEventListener("click", resetGame);
+rankingButton.addEventListener("click", showRanking);
+gameOverRankingButton.addEventListener("click", showRanking);
+backButton.addEventListener("click", showMenu);
+
+createStars();
+resizeCanvas();
+updateHud();
+requestAnimationFrame(loop);
