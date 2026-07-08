@@ -139,6 +139,19 @@ input {
 	text-align: right;
 }
 
+.menu-access-button {
+	position: absolute;
+	left: 18px;
+	bottom: 18px;
+	z-index: 4;
+	min-height: 38px;
+	padding: 0 14px;
+}
+
+.menu-access-button[hidden] {
+	display: none;
+}
+
 .overlay {
 	position: absolute;
 	inset: 0;
@@ -278,6 +291,38 @@ h2 {
 	box-shadow: 0 0 0 3px rgba(84, 199, 196, 0.3);
 }
 
+.motion-setting {
+	display: grid;
+	gap: 8px;
+	margin: 16px auto 0;
+	max-width: 360px;
+	color: var(--yellow);
+	font-size: 13px;
+	font-weight: 700;
+	text-align: left;
+	text-transform: uppercase;
+}
+
+.motion-setting-control {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 48px;
+	align-items: center;
+	gap: 12px;
+}
+
+.motion-setting input[type="range"] {
+	width: 100%;
+	accent-color: var(--green);
+	cursor: pointer;
+}
+
+.motion-setting output {
+	padding: 6px;
+	color: var(--ink);
+	background: var(--white);
+	text-align: center;
+}
+
 .actions {
 	display: flex;
 	justify-content: center;
@@ -384,5 +429,10 @@ button.secondary:focus-visible {
 
 	.actions {
 		flex-direction: column;
+	}
+
+	.menu-access-button {
+		left: 10px;
+		bottom: 10px;
 	}
 }

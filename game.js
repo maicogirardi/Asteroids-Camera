@@ -10,6 +10,7 @@ const rankingOverlay = document.getElementById("rankingOverlay");
 const gameOverOverlay = document.getElementById("gameOverOverlay");
 const playerNameInput = document.getElementById("playerName");
 const startButton = document.getElementById("startButton");
+const menuButton = document.getElementById("menuButton");
 const cameraButton = document.getElementById("cameraButton");
 const rankingButton = document.getElementById("rankingButton");
 const backButton = document.getElementById("backButton");
@@ -23,8 +24,11 @@ const cameraVideo = document.getElementById("cameraVideo");
 const cameraStatus = document.getElementById("cameraStatus");
 const cameraVector = document.getElementById("cameraVector");
 const cameraGesture = document.getElementById("cameraGesture");
+const cameraAcceleration = document.getElementById("cameraAcceleration");
+const cameraAccelerationValue = document.getElementById("cameraAccelerationValue");
 
 const storageKey = "asteroids-bb-ranking";
+const cameraSettingsStorageKey = "asteroids-camera-settings";
 const palette = {
 	space: "#06293a",
 	white: "#d8d6e2",
@@ -60,6 +64,7 @@ const motionInput = {
 	y: 0,
 	targetX: 0,
 	targetY: 0,
+	acceleration: 260,
 	shooting: false,
 	lastVideoTime: -1,
 	lastHandRun: 0,
@@ -69,7 +74,8 @@ const motionInput = {
 	handLandmarker: null,
 	rightHandDetected: false,
 	leftHandDetected: false,
-	previewVisible: true
+	previewVisible: true,
+	cameraEnabledPreference: false
 };
 let ship = createShip();
 let bullets = [];
@@ -103,6 +109,7 @@ function resizeCanvas() {
 
 function resetGame() {
 	game.state = "playing";
+	menuButton.hidden = false;
 	game.score = 0;
 	game.lives = 3;
 	game.wave = 1;
@@ -245,9 +252,15 @@ function handleInput(deltaTime) {
 		ship.velocityY *= 1 - 2.4 * deltaTime;
 	}
 
+	if (motionInput.enabled) {
+		const cameraDrag = Math.max(0, 1 - 2.2 * deltaTime);
+		ship.velocityX *= cameraDrag;
+		ship.velocityY *= cameraDrag;
+	}
+
 	if (hasMotion) {
-		ship.velocityX += motionInput.x * 360 * deltaTime;
-		ship.velocityY += motionInput.y * 360 * deltaTime;
+		ship.velocityX += motionInput.x * motionInput.acceleration * deltaTime;
+		ship.velocityY += motionInput.y * motionInput.acceleration * deltaTime;
 
 		if (Math.abs(motionInput.x) > 0.08 || Math.abs(motionInput.y) > 0.08) {
 			ship.angle = Math.atan2(motionInput.y, motionInput.x);
@@ -405,6 +418,7 @@ function damageShip() {
 
 function endGame() {
 	game.state = "gameover";
+	menuButton.hidden = true;
 	saveScore();
 	finalScore.textContent = `Pontuação final: ${game.score}`;
 	gameOverTitle.textContent = game.score > 0 ? "Missão encerrada" : "Tente novamente";
@@ -675,6 +689,7 @@ function renderRanking() {
 }
 
 function showRanking() {
+	menuButton.hidden = true;
 	renderRanking();
 	hideAllOverlays();
 	rankingOverlay.classList.remove("hidden");
@@ -683,6 +698,7 @@ function showRanking() {
 
 function showMenu() {
 	game.state = "menu";
+	menuButton.hidden = true;
 	hideAllOverlays();
 	menuOverlay.classList.remove("hidden");
 }
@@ -715,7 +731,37 @@ function loop(timestamp) {
 	requestAnimationFrame(loop);
 }
 
-async function enableCameraControls() {
+function loadCameraSettings() {
+	try {
+		const settings = JSON.parse(localStorage.getItem(cameraSettingsStorageKey));
+
+		if (settings) {
+			const acceleration = Number(settings.acceleration);
+
+			if (Number.isFinite(acceleration)) {
+				motionInput.acceleration = Math.max(250, Math.min(1500, acceleration));
+			}
+
+			motionInput.previewVisible = settings.previewVisible !== false;
+			motionInput.cameraEnabledPreference = settings.cameraEnabled === true;
+		}
+	} catch {
+		localStorage.removeItem(cameraSettingsStorageKey);
+	}
+
+	cameraAcceleration.value = String(motionInput.acceleration);
+	cameraAccelerationValue.value = String(motionInput.acceleration);
+}
+
+function saveCameraSettings() {
+	localStorage.setItem(cameraSettingsStorageKey, JSON.stringify({
+		acceleration: motionInput.acceleration,
+		cameraEnabled: motionInput.cameraEnabledPreference,
+		previewVisible: motionInput.previewVisible
+	}));
+}
+
+async function enableCameraControls(isRestore = false) {
 	if (motionInput.enabled) {
 		return;
 	}
@@ -759,14 +805,22 @@ async function enableCameraControls() {
 		});
 
 		motionInput.enabled = true;
-		motionInput.previewVisible = true;
+		motionInput.cameraEnabledPreference = true;
+		cameraDebug.classList.toggle("hidden", !motionInput.previewVisible);
 		cameraButton.disabled = false;
-		cameraButton.textContent = "Ocultar câmera";
+		cameraButton.textContent = motionInput.previewVisible ? "Ocultar câmera" : "Mostrar câmera";
 		cameraStatus.textContent = "Mostre as mãos para a câmera";
+		saveCameraSettings();
 		requestAnimationFrame(updateCameraInput);
 	} catch (error) {
 		console.error(error);
 		motionInput.enabled = false;
+
+		if (!isRestore) {
+			motionInput.cameraEnabledPreference = false;
+			saveCameraSettings();
+		}
+
 		cameraButton.disabled = false;
 		cameraButton.textContent = "Ativar câmera";
 		cameraStatus.textContent = getCameraErrorMessage(error);
@@ -782,6 +836,7 @@ function toggleCameraControls() {
 	motionInput.previewVisible = !motionInput.previewVisible;
 	cameraDebug.classList.toggle("hidden", !motionInput.previewVisible);
 	cameraButton.textContent = motionInput.previewVisible ? "Ocultar câmera" : "Mostrar câmera";
+	saveCameraSettings();
 }
 
 function getCameraErrorMessage(error) {
@@ -956,11 +1011,24 @@ playerNameInput.addEventListener("pointerup", (event) => {
 });
 
 startButton.addEventListener("click", resetGame);
+menuButton.addEventListener("click", showMenu);
 cameraButton.addEventListener("click", toggleCameraControls);
 restartButton.addEventListener("click", resetGame);
 rankingButton.addEventListener("click", showRanking);
 gameOverRankingButton.addEventListener("click", showRanking);
 backButton.addEventListener("click", showMenu);
+
+cameraAcceleration.addEventListener("input", () => {
+	motionInput.acceleration = Number(cameraAcceleration.value);
+	cameraAccelerationValue.value = cameraAcceleration.value;
+	saveCameraSettings();
+});
+
+loadCameraSettings();
+
+if (motionInput.cameraEnabledPreference) {
+	enableCameraControls(true);
+}
 
 createStars();
 resizeCanvas();

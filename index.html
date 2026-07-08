@@ -25,6 +25,8 @@
 				</div>
 			</div>
 
+			<button id="menuButton" class="menu-access-button secondary" type="button" hidden>Menu</button>
+
 			<div id="menuOverlay" class="overlay">
 				<div class="menu">
 					<p class="eyebrow">Banco do Brasil Arcade</p>
@@ -35,6 +37,14 @@
 					<label class="name-field" for="playerName">
 						<span>Nome do jogador</span>
 						<input id="playerName" maxlength="16" autocomplete="off" value="Piloto BB">
+					</label>
+
+					<label class="motion-setting" for="cameraAcceleration">
+						<span>Aceleração da câmera</span>
+						<div class="motion-setting-control">
+							<input id="cameraAcceleration" type="range" min="250" max="1500" step="10" value="260">
+							<output id="cameraAccelerationValue" for="cameraAcceleration">260</output>
+						</div>
 					</label>
 
 					<div class="actions">
