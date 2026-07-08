@@ -68,7 +68,8 @@ const motionInput = {
 	debugInterval: 120,
 	handLandmarker: null,
 	rightHandDetected: false,
-	leftHandDetected: false
+	leftHandDetected: false,
+	previewVisible: true
 };
 let ship = createShip();
 let bullets = [];
@@ -758,7 +759,9 @@ async function enableCameraControls() {
 		});
 
 		motionInput.enabled = true;
-		cameraButton.textContent = "Câmera ativa";
+		motionInput.previewVisible = true;
+		cameraButton.disabled = false;
+		cameraButton.textContent = "Ocultar câmera";
 		cameraStatus.textContent = "Mostre as mãos para a câmera";
 		requestAnimationFrame(updateCameraInput);
 	} catch (error) {
@@ -768,6 +771,17 @@ async function enableCameraControls() {
 		cameraButton.textContent = "Ativar câmera";
 		cameraStatus.textContent = getCameraErrorMessage(error);
 	}
+}
+
+function toggleCameraControls() {
+	if (!motionInput.enabled) {
+		enableCameraControls();
+		return;
+	}
+
+	motionInput.previewVisible = !motionInput.previewVisible;
+	cameraDebug.classList.toggle("hidden", !motionInput.previewVisible);
+	cameraButton.textContent = motionInput.previewVisible ? "Ocultar câmera" : "Mostrar câmera";
 }
 
 function getCameraErrorMessage(error) {
@@ -942,7 +956,7 @@ playerNameInput.addEventListener("pointerup", (event) => {
 });
 
 startButton.addEventListener("click", resetGame);
-cameraButton.addEventListener("click", enableCameraControls);
+cameraButton.addEventListener("click", toggleCameraControls);
 restartButton.addEventListener("click", resetGame);
 rankingButton.addEventListener("click", showRanking);
 gameOverRankingButton.addEventListener("click", showRanking);
