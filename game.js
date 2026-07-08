@@ -59,16 +59,14 @@ const motionInput = {
 	x: 0,
 	y: 0,
 	shooting: false,
-	neutralX: 0.5,
-	neutralY: 0.5,
-	calibrationSamples: [],
 	lastVideoTime: -1,
-	lastFaceRun: 0,
+	lastHandRun: 0,
 	lastDebugRun: 0,
-	faceInterval: 42,
+	handInterval: 66,
 	debugInterval: 120,
-	blinkCooldown: 0,
-	faceLandmarker: null
+	handLandmarker: null,
+	rightHandDetected: false,
+	leftHandDetected: false
 };
 let ship = createShip();
 let bullets = [];
@@ -741,17 +739,17 @@ async function enableCameraControls() {
 			`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${mediaPipeVersion}/wasm`
 		);
 
-		motionInput.faceLandmarker = await vision.FaceLandmarker.createFromOptions(filesetResolver, {
+		motionInput.handLandmarker = await vision.HandLandmarker.createFromOptions(filesetResolver, {
 			baseOptions: {
-				modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+				modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
 			},
 			runningMode: "VIDEO",
-			numFaces: 1
+			numHands: 2
 		});
 
 		motionInput.enabled = true;
 		cameraButton.textContent = "Câmera ativa";
-		cameraStatus.textContent = "Calibrando rosto...";
+		cameraStatus.textContent = "Mostre as mãos para a câmera";
 		requestAnimationFrame(updateCameraInput);
 	} catch (error) {
 		console.error(error);
@@ -789,9 +787,9 @@ function updateCameraInput() {
 	if (cameraVideo.currentTime !== motionInput.lastVideoTime) {
 		motionInput.lastVideoTime = cameraVideo.currentTime;
 
-		if (timestamp - motionInput.lastFaceRun >= motionInput.faceInterval) {
-			motionInput.lastFaceRun = timestamp;
-			updateFaceInput(timestamp);
+		if (timestamp - motionInput.lastHandRun >= motionInput.handInterval) {
+			motionInput.lastHandRun = timestamp;
+			updateHandInput(timestamp);
 		}
 
 		if (timestamp - motionInput.lastDebugRun >= motionInput.debugInterval) {
@@ -803,48 +801,92 @@ function updateCameraInput() {
 	requestAnimationFrame(updateCameraInput);
 }
 
-function updateFaceInput(timestamp) {
-	const results = motionInput.faceLandmarker.detectForVideo(cameraVideo, timestamp);
-	const landmarks = results.faceLandmarks?.[0];
+function updateHandInput(timestamp) {
+	const results = motionInput.handLandmarker.detectForVideo(cameraVideo, timestamp);
+	motionInput.rightHandDetected = false;
+	motionInput.leftHandDetected = false;
+	motionInput.shooting = false;
 
-	if (!landmarks) {
-		motionInput.ready = false;
+	for (let index = 0; index < (results.landmarks?.length || 0); index++) {
+		const landmarks = results.landmarks[index];
+		const handedness = results.handednesses[index]?.[0]?.categoryName;
+
+		if (handedness === "Right") {
+			updateRightHandMovement(landmarks);
+			motionInput.rightHandDetected = true;
+		} else if (handedness === "Left") {
+			motionInput.leftHandDetected = true;
+			motionInput.shooting = isHandClosed(landmarks);
+		}
+	}
+
+	if (!motionInput.rightHandDetected) {
 		motionInput.x = 0;
 		motionInput.y = 0;
-		cameraStatus.textContent = "Rosto não detectado";
-		return;
 	}
 
-	const nose = landmarks[1];
+	motionInput.ready = motionInput.rightHandDetected;
+	cameraStatus.textContent = getHandStatus();
+}
 
-	if (motionInput.calibrationSamples.length < 30) {
-		motionInput.calibrationSamples.push({ x: nose.x, y: nose.y });
-		const progress = Math.round(motionInput.calibrationSamples.length / 30 * 100);
-		cameraStatus.textContent = `Calibrando rosto ${progress}%`;
-		return;
+function updateRightHandMovement(landmarks) {
+	const palmIndices = [0, 5, 9, 13, 17];
+	const palm = palmIndices.reduce((position, index) => {
+		position.x += landmarks[index].x;
+		position.y += landmarks[index].y;
+		return position;
+	}, { x: 0, y: 0 });
+
+	palm.x /= palmIndices.length;
+	palm.y /= palmIndices.length;
+
+	const deadzone = 0.12;
+	const sensitivity = 2.8;
+	const mirroredX = 1 - palm.x;
+	motionInput.x = applyDeadzone((mirroredX - 0.5) * sensitivity, deadzone);
+	motionInput.y = applyDeadzone((palm.y - 0.5) * sensitivity, deadzone);
+}
+
+function isHandClosed(landmarks) {
+	const wrist = landmarks[0];
+	const fingers = [
+		{ tip: 8, joint: 6 },
+		{ tip: 12, joint: 10 },
+		{ tip: 16, joint: 14 },
+		{ tip: 20, joint: 18 }
+	];
+	let closedFingers = 0;
+
+	for (const finger of fingers) {
+		const tipDistance = getLandmarkDistance(landmarks[finger.tip], wrist);
+		const jointDistance = getLandmarkDistance(landmarks[finger.joint], wrist);
+
+		if (tipDistance < jointDistance * 1.18) {
+			closedFingers++;
+		}
 	}
 
-	if (!motionInput.ready) {
-		const total = motionInput.calibrationSamples.reduce((sum, sample) => {
-			sum.x += sample.x;
-			sum.y += sample.y;
-			return sum;
-		}, { x: 0, y: 0 });
+	return closedFingers >= 3;
+}
 
-		motionInput.neutralX = total.x / motionInput.calibrationSamples.length;
-		motionInput.neutralY = total.y / motionInput.calibrationSamples.length;
-		motionInput.ready = true;
-		cameraStatus.textContent = "Controle por câmera ativo";
+function getLandmarkDistance(first, second) {
+	return Math.hypot(first.x - second.x, first.y - second.y);
+}
+
+function getHandStatus() {
+	if (motionInput.rightHandDetected && motionInput.leftHandDetected) {
+		return "Duas mãos detectadas";
 	}
 
-	const deadzone = 0.035;
-	const sensitivity = 8;
-	const rawX = (nose.x - motionInput.neutralX) * sensitivity;
-	const rawY = (nose.y - motionInput.neutralY) * sensitivity;
+	if (motionInput.rightHandDetected) {
+		return "Mão direita controlando";
+	}
 
-	motionInput.x = applyDeadzone(rawX, deadzone);
-	motionInput.y = applyDeadzone(rawY, deadzone);
-	updateBlinkInput(landmarks, timestamp);
+	if (motionInput.leftHandDetected) {
+		return "Mostre também a mão direita";
+	}
+
+	return "Nenhuma mão detectada";
 }
 
 function applyDeadzone(value, deadzone) {
@@ -855,37 +897,9 @@ function applyDeadzone(value, deadzone) {
 	return Math.max(-1, Math.min(1, value));
 }
 
-function updateBlinkInput(landmarks, timestamp) {
-	const leftEye = getEyeOpenRatio(landmarks, 33, 133, 159, 145);
-	const rightEye = getEyeOpenRatio(landmarks, 362, 263, 386, 374);
-	const blinkDetected = leftEye < 0.18 && rightEye < 0.18;
-
-	if (timestamp < motionInput.blinkCooldown) {
-		motionInput.shooting = false;
-		return;
-	}
-
-	motionInput.shooting = blinkDetected;
-
-	if (blinkDetected) {
-		motionInput.blinkCooldown = timestamp + 360;
-	}
-}
-
-function getEyeOpenRatio(landmarks, outerIndex, innerIndex, upperIndex, lowerIndex) {
-	const outer = landmarks[outerIndex];
-	const inner = landmarks[innerIndex];
-	const upper = landmarks[upperIndex];
-	const lower = landmarks[lowerIndex];
-	const width = Math.hypot(inner.x - outer.x, inner.y - outer.y);
-	const height = Math.hypot(lower.x - upper.x, lower.y - upper.y);
-
-	return width > 0 ? height / width : 1;
-}
-
 function updateCameraDebug() {
 	cameraVector.textContent = `X ${motionInput.x.toFixed(2)} | Y ${motionInput.y.toFixed(2)}`;
-	cameraGesture.textContent = motionInput.shooting ? "Gesto: piscada" : "Gesto: nenhum";
+	cameraGesture.textContent = motionInput.shooting ? "Esquerda: fechada (tiro)" : "Esquerda: aberta";
 }
 
 window.addEventListener("resize", resizeCanvas);
