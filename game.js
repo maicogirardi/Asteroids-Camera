@@ -58,11 +58,13 @@ const motionInput = {
 	ready: false,
 	x: 0,
 	y: 0,
+	targetX: 0,
+	targetY: 0,
 	shooting: false,
 	lastVideoTime: -1,
 	lastHandRun: 0,
 	lastDebugRun: 0,
-	handInterval: 66,
+	handInterval: 125,
 	debugInterval: 120,
 	handLandmarker: null,
 	rightHandDetected: false,
@@ -218,6 +220,9 @@ function handleInput(deltaTime) {
 	const thrusting = keys.has("ArrowUp") || keys.has("KeyW");
 	const braking = keys.has("ArrowDown") || keys.has("KeyS");
 	const hasMotion = motionInput.enabled && motionInput.ready;
+	const inputSmoothing = Math.min(1, deltaTime * 10);
+	motionInput.x += (motionInput.targetX - motionInput.x) * inputSmoothing;
+	motionInput.y += (motionInput.targetY - motionInput.y) * inputSmoothing;
 
 	if (turningLeft) {
 		ship.angle -= 4.8 * deltaTime;
@@ -723,8 +728,9 @@ async function enableCameraControls() {
 	try {
 		const stream = await navigator.mediaDevices.getUserMedia({
 			video: {
-				width: { ideal: 320 },
-				height: { ideal: 240 },
+				width: { ideal: 256 },
+				height: { ideal: 144 },
+				frameRate: { ideal: 15, max: 15 },
 				facingMode: "user"
 			},
 			audio: false
@@ -741,10 +747,14 @@ async function enableCameraControls() {
 
 		motionInput.handLandmarker = await vision.HandLandmarker.createFromOptions(filesetResolver, {
 			baseOptions: {
-				modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
+				modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+				delegate: "GPU"
 			},
 			runningMode: "VIDEO",
-			numHands: 2
+			numHands: 2,
+			minHandDetectionConfidence: 0.45,
+			minHandPresenceConfidence: 0.45,
+			minTrackingConfidence: 0.45
 		});
 
 		motionInput.enabled = true;
@@ -821,8 +831,8 @@ function updateHandInput(timestamp) {
 	}
 
 	if (!motionInput.rightHandDetected) {
-		motionInput.x = 0;
-		motionInput.y = 0;
+		motionInput.targetX = 0;
+		motionInput.targetY = 0;
 	}
 
 	motionInput.ready = motionInput.rightHandDetected;
@@ -843,8 +853,8 @@ function updateRightHandMovement(landmarks) {
 	const deadzone = 0.12;
 	const sensitivity = 2.8;
 	const mirroredX = 1 - palm.x;
-	motionInput.x = applyDeadzone((mirroredX - 0.5) * sensitivity, deadzone);
-	motionInput.y = applyDeadzone((palm.y - 0.5) * sensitivity, deadzone);
+	motionInput.targetX = applyDeadzone((mirroredX - 0.5) * sensitivity, deadzone);
+	motionInput.targetY = applyDeadzone((palm.y - 0.5) * sensitivity, deadzone);
 }
 
 function isHandClosed(landmarks) {
