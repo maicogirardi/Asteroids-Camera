@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<title>Asteroids BB Controller</title>
+	<link rel="stylesheet" href="controller.css">
+</head>
+<body>
+	<main class="controller">
+		<section class="panel">
+			<p class="eyebrow">Asteroids BB</p>
+			<h1>Controle</h1>
+
+			<div class="status">
+				<strong id="connectionStatus">Conectando...</strong>
+				<span id="motionStatus">Giroscópio desligado</span>
+				<span id="motionVector">X 0.00 | Y 0.00</span>
+			</div>
+
+			<div class="actions">
+				<button id="motionButton" type="button">Ativar giroscópio</button>
+				<button id="calibrateButton" type="button" class="secondary">Recalibrar</button>
+			</div>
+
+			<button id="fireButton" type="button" class="fire-button">Atirar</button>
+		</section>
+	</main>
+
+	<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+	<script src="controller.js"></script>
+</body>
+</html>

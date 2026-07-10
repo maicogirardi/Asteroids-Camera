@@ -325,6 +325,7 @@ h2 {
 
 .actions {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: center;
 	gap: 12px;
 	margin-top: 20px;
@@ -359,6 +360,58 @@ button.secondary:hover,
 button.secondary:focus-visible {
 	color: #03111c;
 	background: #ffffff;
+}
+
+.phone-setup {
+	display: grid;
+	grid-template-columns: 164px minmax(0, 1fr);
+	align-items: center;
+	gap: 14px;
+	margin: 16px auto 0;
+	max-width: 360px;
+	padding: 12px;
+	background: rgba(255, 255, 255, 0.08);
+	border: 2px solid var(--cyan);
+	box-shadow: 4px 4px 0 #000c33;
+	text-align: left;
+}
+
+.phone-setup.hidden {
+	display: none;
+}
+
+.phone-qr {
+	display: grid;
+	place-items: center;
+	width: 164px;
+	height: 164px;
+	background: #ffffff;
+	image-rendering: pixelated;
+}
+
+.phone-qr img,
+.phone-qr canvas {
+	width: 164px;
+	height: 164px;
+	image-rendering: pixelated;
+}
+
+.phone-setup-info {
+	display: grid;
+	gap: 6px;
+	min-width: 0;
+	color: var(--white);
+	font-size: 11px;
+	line-height: 1.25;
+	text-transform: uppercase;
+}
+
+.phone-setup-info strong {
+	color: var(--yellow);
+}
+
+.phone-setup-info span {
+	overflow-wrap: anywhere;
 }
 
 .controls {
@@ -429,6 +482,12 @@ button.secondary:focus-visible {
 
 	.actions {
 		flex-direction: column;
+	}
+
+	.phone-setup {
+		grid-template-columns: 1fr;
+		justify-items: center;
+		text-align: center;
 	}
 
 	.menu-access-button {

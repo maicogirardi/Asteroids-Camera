@@ -12,6 +12,7 @@ const playerNameInput = document.getElementById("playerName");
 const startButton = document.getElementById("startButton");
 const menuButton = document.getElementById("menuButton");
 const cameraButton = document.getElementById("cameraButton");
+const phoneButton = document.getElementById("phoneButton");
 const rankingButton = document.getElementById("rankingButton");
 const backButton = document.getElementById("backButton");
 const restartButton = document.getElementById("restartButton");
@@ -26,9 +27,15 @@ const cameraVector = document.getElementById("cameraVector");
 const cameraGesture = document.getElementById("cameraGesture");
 const cameraAcceleration = document.getElementById("cameraAcceleration");
 const cameraAccelerationValue = document.getElementById("cameraAccelerationValue");
+const phoneSetup = document.getElementById("phoneSetup");
+const phoneQr = document.getElementById("phoneQr");
+const phoneStatus = document.getElementById("phoneStatus");
+const phoneUrl = document.getElementById("phoneUrl");
+const phoneVector = document.getElementById("phoneVector");
 
 const storageKey = "asteroids-bb-ranking";
 const cameraSettingsStorageKey = "asteroids-camera-settings";
+const publicControllerUrl = "https://maicogirardi.github.io/Asteroids-Camera/controller.html";
 const palette = {
 	space: "#06293a",
 	white: "#d8d6e2",
@@ -59,6 +66,7 @@ const game = {
 const keys = new Set();
 const motionInput = {
 	enabled: false,
+	source: "none",
 	ready: false,
 	x: 0,
 	y: 0,
@@ -75,7 +83,18 @@ const motionInput = {
 	rightHandDetected: false,
 	leftHandDetected: false,
 	previewVisible: true,
-	cameraEnabledPreference: false
+	cameraEnabledPreference: false,
+	preferredSource: "none"
+};
+const phoneInput = {
+	enabled: false,
+	connected: false,
+	peer: null,
+	connection: null,
+	roomId: "",
+	url: "",
+	lastMessageTime: 0,
+	latency: 0
 };
 let ship = createShip();
 let bullets = [];
@@ -744,6 +763,9 @@ function loadCameraSettings() {
 
 			motionInput.previewVisible = settings.previewVisible !== false;
 			motionInput.cameraEnabledPreference = settings.cameraEnabled === true;
+			motionInput.preferredSource = settings.preferredSource === "phone" || settings.preferredSource === "camera"
+				? settings.preferredSource
+				: "none";
 		}
 	} catch {
 		localStorage.removeItem(cameraSettingsStorageKey);
@@ -757,14 +779,17 @@ function saveCameraSettings() {
 	localStorage.setItem(cameraSettingsStorageKey, JSON.stringify({
 		acceleration: motionInput.acceleration,
 		cameraEnabled: motionInput.cameraEnabledPreference,
-		previewVisible: motionInput.previewVisible
+		previewVisible: motionInput.previewVisible,
+		preferredSource: motionInput.preferredSource
 	}));
 }
 
 async function enableCameraControls(isRestore = false) {
-	if (motionInput.enabled) {
+	if (motionInput.source === "camera") {
 		return;
 	}
+
+	disablePhoneControls(false);
 
 	const mediaPipeVersion = "0.10.21";
 	cameraButton.disabled = true;
@@ -805,7 +830,9 @@ async function enableCameraControls(isRestore = false) {
 		});
 
 		motionInput.enabled = true;
+		motionInput.source = "camera";
 		motionInput.cameraEnabledPreference = true;
+		motionInput.preferredSource = "camera";
 		cameraDebug.classList.toggle("hidden", !motionInput.previewVisible);
 		cameraButton.disabled = false;
 		cameraButton.textContent = motionInput.previewVisible ? "Ocultar câmera" : "Mostrar câmera";
@@ -827,8 +854,38 @@ async function enableCameraControls(isRestore = false) {
 	}
 }
 
+function disableCameraControls(savePreference = true) {
+	if (cameraVideo.srcObject) {
+		for (const track of cameraVideo.srcObject.getTracks()) {
+			track.stop();
+		}
+	}
+
+	cameraVideo.srcObject = null;
+	motionInput.enabled = false;
+	motionInput.ready = false;
+	motionInput.source = "none";
+	motionInput.targetX = 0;
+	motionInput.targetY = 0;
+	motionInput.shooting = false;
+	motionInput.rightHandDetected = false;
+	motionInput.leftHandDetected = false;
+	motionInput.cameraEnabledPreference = false;
+	cameraDebug.classList.add("hidden");
+	cameraButton.disabled = false;
+	cameraButton.textContent = "Ativar câmera";
+	cameraStatus.textContent = "Câmera desligada";
+	cameraVector.textContent = "X 0.00 | Y 0.00";
+	cameraGesture.textContent = "Gesto: nenhum";
+
+	if (savePreference) {
+		motionInput.preferredSource = "none";
+		saveCameraSettings();
+	}
+}
+
 function toggleCameraControls() {
-	if (!motionInput.enabled) {
+	if (motionInput.source !== "camera") {
 		enableCameraControls();
 		return;
 	}
@@ -856,6 +913,10 @@ function getCameraErrorMessage(error) {
 }
 
 function updateCameraInput() {
+	if (motionInput.source !== "camera") {
+		return;
+	}
+
 	if (!motionInput.enabled || cameraVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
 		requestAnimationFrame(updateCameraInput);
 		return;
@@ -981,6 +1042,182 @@ function updateCameraDebug() {
 	cameraGesture.textContent = motionInput.shooting ? "Esquerda: fechada (tiro)" : "Esquerda: aberta";
 }
 
+function togglePhoneControls() {
+	if (phoneInput.enabled) {
+		disablePhoneControls();
+		return;
+	}
+
+	enablePhoneControls();
+}
+
+function enablePhoneControls() {
+	disableCameraControls(false);
+
+	if (typeof Peer === "undefined") {
+		phoneStatus.textContent = "PeerJS não carregou";
+		phoneSetup.classList.remove("hidden");
+		return;
+	}
+
+	disablePhoneControls(false);
+	phoneInput.enabled = true;
+	phoneInput.connected = false;
+	phoneInput.roomId = `asteroids-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+	phoneInput.url = getPhoneControllerUrl(phoneInput.roomId);
+	motionInput.enabled = true;
+	motionInput.ready = false;
+	motionInput.source = "phone";
+	motionInput.preferredSource = "phone";
+	motionInput.cameraEnabledPreference = false;
+	phoneSetup.classList.remove("hidden");
+	phoneButton.textContent = "Desligar celular";
+	phoneStatus.textContent = "Criando sala...";
+	phoneUrl.textContent = phoneInput.url;
+	phoneVector.textContent = "X 0.00 | Y 0.00 | 0 ms";
+	saveCameraSettings();
+	drawPhoneQr();
+
+	phoneInput.peer = new Peer(phoneInput.roomId, {
+		debug: 0
+	});
+
+	phoneInput.peer.on("open", () => {
+		phoneStatus.textContent = "Escaneie o QR Code";
+	});
+
+	phoneInput.peer.on("connection", (connection) => {
+		if (phoneInput.connection && phoneInput.connection.open) {
+			phoneInput.connection.close();
+		}
+
+		phoneInput.connection = connection;
+		bindPhoneConnection(connection);
+	});
+
+	phoneInput.peer.on("error", (error) => {
+		console.error(error);
+		phoneStatus.textContent = `Erro: ${error.type || "conexão"}`;
+	});
+}
+
+function disablePhoneControls(savePreference = true) {
+	if (phoneInput.connection) {
+		phoneInput.connection.close();
+	}
+
+	if (phoneInput.peer) {
+		phoneInput.peer.destroy();
+	}
+
+	phoneInput.enabled = false;
+	phoneInput.connected = false;
+	phoneInput.peer = null;
+	phoneInput.connection = null;
+	phoneInput.roomId = "";
+	phoneInput.url = "";
+	phoneInput.lastMessageTime = 0;
+	phoneInput.latency = 0;
+	phoneSetup.classList.add("hidden");
+	phoneButton.textContent = "Controle por celular";
+	phoneStatus.textContent = "Celular desligado";
+	phoneUrl.textContent = "Aguardando sala...";
+	phoneVector.textContent = "X 0.00 | Y 0.00 | 0 ms";
+
+	if (motionInput.source === "phone") {
+		motionInput.enabled = false;
+		motionInput.ready = false;
+		motionInput.source = "none";
+		motionInput.targetX = 0;
+		motionInput.targetY = 0;
+		motionInput.shooting = false;
+	}
+
+	if (savePreference) {
+		motionInput.preferredSource = "none";
+		saveCameraSettings();
+	}
+}
+
+function bindPhoneConnection(connection) {
+	phoneStatus.textContent = "Celular conectando...";
+
+	connection.on("open", () => {
+		phoneInput.connected = true;
+		motionInput.ready = true;
+		phoneStatus.textContent = "Celular conectado";
+	});
+
+	connection.on("data", (data) => {
+		updatePhoneInput(data);
+	});
+
+	connection.on("close", () => {
+		phoneInput.connected = false;
+		motionInput.ready = false;
+		motionInput.targetX = 0;
+		motionInput.targetY = 0;
+		motionInput.shooting = false;
+		phoneStatus.textContent = "Celular desconectado";
+	});
+
+	connection.on("error", (error) => {
+		console.error(error);
+		phoneStatus.textContent = "Erro no celular";
+	});
+}
+
+function updatePhoneInput(data) {
+	if (motionInput.source !== "phone" || !data || data.type !== "motion") {
+		return;
+	}
+
+	const timestamp = performance.now();
+	const x = Number(data.x);
+	const y = Number(data.y);
+	const packetInterval = phoneInput.lastMessageTime > 0 ? Math.round(timestamp - phoneInput.lastMessageTime) : 0;
+
+	motionInput.targetX = Number.isFinite(x) ? applyDeadzone(x, 0.08) : 0;
+	motionInput.targetY = Number.isFinite(y) ? applyDeadzone(y, 0.08) : 0;
+	motionInput.shooting = data.shooting === true;
+	motionInput.ready = true;
+	phoneInput.connected = true;
+	phoneInput.lastMessageTime = timestamp;
+	phoneInput.latency = packetInterval;
+	phoneStatus.textContent = motionInput.shooting ? "Celular conectado: tiro" : "Celular conectado";
+	phoneVector.textContent = `X ${motionInput.targetX.toFixed(2)} | Y ${motionInput.targetY.toFixed(2)} | ${phoneInput.latency} ms`;
+}
+
+function drawPhoneQr() {
+	phoneQr.replaceChildren();
+
+	if (typeof QRCode === "undefined") {
+		phoneQr.textContent = "QR indisponível";
+		return;
+	}
+
+	new QRCode(phoneQr, {
+		text: phoneInput.url,
+		width: 164,
+		height: 164,
+		colorDark: "#06112f",
+		colorLight: "#ffffff",
+		correctLevel: QRCode.CorrectLevel.M
+	});
+}
+
+function getPhoneControllerUrl(roomId) {
+	const url = new URL("controller.html", window.location.href);
+	const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+
+	if (isLocalhost) {
+		url.href = publicControllerUrl;
+	}
+
+	url.searchParams.set("room", roomId);
+	return url.href;
+}
+
 window.addEventListener("resize", resizeCanvas);
 
 window.addEventListener("keydown", (event) => {
@@ -1013,6 +1250,7 @@ playerNameInput.addEventListener("pointerup", (event) => {
 startButton.addEventListener("click", resetGame);
 menuButton.addEventListener("click", showMenu);
 cameraButton.addEventListener("click", toggleCameraControls);
+phoneButton.addEventListener("click", togglePhoneControls);
 restartButton.addEventListener("click", resetGame);
 rankingButton.addEventListener("click", showRanking);
 gameOverRankingButton.addEventListener("click", showRanking);
@@ -1026,7 +1264,9 @@ cameraAcceleration.addEventListener("input", () => {
 
 loadCameraSettings();
 
-if (motionInput.cameraEnabledPreference) {
+if (motionInput.preferredSource === "phone") {
+	enablePhoneControls();
+} else if (motionInput.cameraEnabledPreference) {
 	enableCameraControls(true);
 }
 

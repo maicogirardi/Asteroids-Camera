@@ -50,13 +50,24 @@
 					<div class="actions">
 						<button id="startButton" type="button">Jogar</button>
 						<button id="cameraButton" type="button" class="secondary">Ativar câmera</button>
+						<button id="phoneButton" type="button" class="secondary">Controle por celular</button>
 						<button id="rankingButton" type="button" class="secondary">Ranking</button>
+					</div>
+
+					<div id="phoneSetup" class="phone-setup hidden" aria-label="Controle por celular">
+						<div id="phoneQr" class="phone-qr" aria-hidden="true"></div>
+						<div class="phone-setup-info">
+							<strong id="phoneStatus">Celular desligado</strong>
+							<span id="phoneUrl">Aguardando sala...</span>
+							<span id="phoneVector">X 0.00 | Y 0.00 | 0 ms</span>
+						</div>
 					</div>
 
 					<div class="controls">
 						<span>Setas/WASD: mover</span>
 						<span>Espaço/Enter: atirar</span>
 						<span>Mão direita: mover | Esquerda fechada: atirar</span>
+						<span>Celular: inclinar | Tela: atirar</span>
 						<span>P: pausar</span>
 					</div>
 				</div>
@@ -97,6 +108,8 @@
 		</section>
 	</main>
 
+	<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 	<script src="game.js"></script>
 </body>
 </html>
